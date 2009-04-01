@@ -7,17 +7,17 @@
 //
 
 #import <Cocoa/Cocoa.h>
-//#import "ApplicationServices/ApplicationServices.h"
-//#import "CoreFoundation/CoreFoundation.h"
-#import <Carbon/Carbon.h>
 
 @interface LinkController : NSObject {
-  IBOutlet NSPopUpButton * browserChooser;
-  IBOutlet NSWindow * chooserWindow;
+    IBOutlet NSPopUpButton * browserChooser;
+    IBOutlet NSWindow * chooserWindow;
 }
++(NSArray *)appsThatOpen:(NSURL *)thisURL;
++(void)handleGetURLEvent:(NSAppleEventDescriptor *)event withReplyEvent:(NSAppleEventDescriptor *)replyEvent;
++(void)openURL:(NSURL*)url;
 
--(NSArray *)appsThatOpen:(NSURL *)aURL;
 -(IBAction)quitButtonPressed:(id)sender;
 -(IBAction)browserChooserUsed:(id)sender;
+-(void)initChooserWindow;
 
 @end
