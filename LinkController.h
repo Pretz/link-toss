@@ -12,12 +12,13 @@
     IBOutlet NSPopUpButton * browserChooser;
     IBOutlet NSWindow * chooserWindow;
 }
+
 +(NSArray *)appsThatOpen:(NSURL *)thisURL;
 +(void)handleGetURLEvent:(NSAppleEventDescriptor *)event withReplyEvent:(NSAppleEventDescriptor *)replyEvent;
 +(void)openURL:(NSURL*)url;
 
 -(IBAction)quitButtonPressed:(id)sender;
 -(IBAction)browserChooserUsed:(id)sender;
--(void)initChooserWindow;
+-(void)becomeFrontAndDisplayWindow;
 
 @end

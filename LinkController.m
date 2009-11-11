@@ -14,9 +14,8 @@ extern int noUI;
 
 /** Heee I aint gonna free nuthin' cuz tha app just quits after handlin' a URL.  HA! HA!
  */
-+ (void)handleGetURLEvent:(NSAppleEventDescriptor *)event withReplyEvent:(NSAppleEventDescriptor *)replyEvent
-{
-  noUI = YES;
++ (void)handleGetURLEvent:(NSAppleEventDescriptor *)event withReplyEvent:(NSAppleEventDescriptor *)replyEvent {
+  NSLog(@"Handling Event");
   if ([event numberOfItems] == 0) {
     NSLog(@"Failed to get URL");
     [[NSApplication sharedApplication] terminate:self];
@@ -36,31 +35,38 @@ extern int noUI;
 
 +(NSArray *)appsThatOpen:(NSURL *)thisURL{
   NSArray * apps = (NSArray *) LSCopyApplicationURLsForURL((CFURLRef) thisURL, kLSRolesViewer);
-  NSLog(@"Locating apps to open %@: %@", thisURL, apps);
+//  NSLog(@"Locating apps to open %@: %@", thisURL, apps);
   return [apps autorelease];
 }
 
 +(void)openURL:(NSURL*)url {
   NSString * appToLaunch = nil;
   /* Apps that can open URLs */
-  NSArray * goodApps = [self appsThatOpen: url];
-  NSLog(@"Apps that open %@: %@", url, goodApps);
+  NSArray * goodApps = [self appsThatOpen:url];
+//  NSLog(@"Apps that open %@: %@", url, goodApps);
   NSMutableDictionary * appsForURLs = [NSMutableDictionary dictionaryWithCapacity:[goodApps count]];
-  int i;
-  for (i = 0; i < [goodApps count]; i++) {
+  for (int i = 0; i < [goodApps count]; i++) {
     //    NSLog((NSString *) CFURLCopyFileSystemPath((CFURLRef) CFArrayGetValueAtIndex(goodApps, i), kCFURLPOSIXPathStyle));
     [appsForURLs setObject: [NSNumber numberWithInt:i+1] forKey:[[goodApps objectAtIndex:i] path]];
   }
-  NSArray * runningApps = [[NSWorkspace sharedWorkspace] launchedApplications];
+  NSArray */*of NSDictionary*/runningApps = [[NSWorkspace sharedWorkspace] launchedApplications];
+  NSString *preferredBrowserPath = [[NSUserDefaults standardUserDefaults] objectForKey:@"DefaultBrowser"];
+  BOOL usePreferredBrowser = NO;
+
   /* Check each app that is running, and see if it handles URLS. If so, choose it as the app to launch */
-  for (i = 0; i < [runningApps count]; i++) {
-    if ([[[runningApps objectAtIndex: i] objectForKey:@"NSApplicationBundleIdentifier"]
+  for (int i = 0; i < [runningApps count]; i++) {
+    // Skip Link Toss
+    if ([[[runningApps objectAtIndex:i] objectForKey:@"NSApplicationBundleIdentifier"]
          isEqualToString:[[NSBundle mainBundle] bundleIdentifier]])
       continue;
-    //    NSLog([[runningApps objectAtIndex:j] objectForKey:@"NSApplicationPath"]);
-    if ([appsForURLs objectForKey: [[runningApps objectAtIndex:i] objectForKey:@"NSApplicationPath"]]) {
-      //      NSLog([[runningApps objectAtIndex:j] objectForKey:@"NSApplicationPath"]);
-      appToLaunch = [[runningApps objectAtIndex:i] objectForKey:@"NSApplicationPath"];
+
+    if ([appsForURLs objectForKey:[[runningApps objectAtIndex:i] objectForKey:@"NSApplicationPath"]]) {
+      NSString *runningBrowserPath = [[runningApps objectAtIndex:i] objectForKey:@"NSApplicationPath"];
+      if ([runningBrowserPath isEqualToString:preferredBrowserPath]) {
+        usePreferredBrowser = YES;
+        break;
+      }
+      appToLaunch = runningBrowserPath;
     }
   }
   LSLaunchURLSpec urlSpec;
@@ -68,11 +74,11 @@ extern int noUI;
   urlSpec.passThruParams = NULL;
   urlSpec.launchFlags = kLSLaunchDefaults;
   urlSpec.asyncRefCon = NULL;
-  if (appToLaunch) {    
-    urlSpec.appURL = (CFURLRef) [goodApps objectAtIndex:[[appsForURLs objectForKey:appToLaunch] intValue]-1];
+  if (!usePreferredBrowser && appToLaunch) {
+    urlSpec.appURL = (CFURLRef) [goodApps objectAtIndex:[[appsForURLs objectForKey:appToLaunch] intValue] - 1];
   }
   else {
-    urlSpec.appURL = (CFURLRef) [NSURL fileURLWithPath:[[NSUserDefaults standardUserDefaults] objectForKey:@"DefaultBrowser"]];
+    urlSpec.appURL = (CFURLRef) [NSURL fileURLWithPath:preferredBrowserPath];
   }
   LSOpenFromURLSpec(&urlSpec, NULL);
   [[NSApplication sharedApplication] terminate:self];
@@ -93,27 +99,31 @@ extern int noUI;
 }
 
 - (void)applicationWillFinishLaunching:(NSNotification *)aNotification {
-
+  NSAppleEventManager *appleEventManager = [NSAppleEventManager sharedAppleEventManager];
+  [appleEventManager setEventHandler:[self class] andSelector:@selector(handleGetURLEvent:withReplyEvent:)
+                       forEventClass:kInternetEventClass andEventID:kAEGetURL];
 }
 
 - (void)applicationDidFinishLaunching:(NSNotification *)aNotification {
-  if (!noUI) {
-    ProcessSerialNumber psn;
-    GetCurrentProcess(&psn);
-    OSStatus returnCode = TransformProcessType(&psn, kProcessTransformToForegroundApplication);
-    if (returnCode == 0) {
-      NSLog(@"Bundle path: %@", [[NSBundle mainBundle] bundlePath]);
-      [self initChooserWindow]; 
-      SetFrontProcess(&psn);
-      [NSMenu setMenuBarVisible:YES];
-      [chooserWindow makeKeyAndOrderFront:self];
-      [[NSWorkspace sharedWorkspace] launchApplication:[[NSBundle mainBundle] bundlePath]];
-    }
-  }
+  // Force two run loops to handle events before becoming foreground
+  [[NSRunLoop currentRunLoop] runUntilDate:[NSDate dateWithTimeIntervalSinceNow:0.1]];
+  [self performSelector:@selector(becomeFrontAndDisplayWindow) withObject:nil afterDelay:0];
 }
 
--(void)initChooserWindow {
-  NSLog(@"Done Launching");
+-(void)becomeFrontAndDisplayWindow {
+  NSLog(@"Becoming front");
+  ProcessSerialNumber psn;
+  GetCurrentProcess(&psn);
+  OSStatus returnCode = TransformProcessType(&psn, kProcessTransformToForegroundApplication);
+  if (returnCode != 0) {
+    NSLog(@"Unable to become foreground application, terminating");
+    [[NSApplication sharedApplication] terminate:self];
+  }
+  
+  SetFrontProcess(&psn);
+  [[NSWorkspace sharedWorkspace] launchApplication:[[NSBundle mainBundle] bundlePath]];
+  [NSMenu setMenuBarVisible:YES];
+  
   /* Make sure we have _some_ default browser */
   NSUserDefaults *sharedDefaults = [NSUserDefaults standardUserDefaults];
   NSString *defaultBrowserName;
@@ -148,6 +158,7 @@ extern int noUI;
       [browserChooser selectItemWithTitle:defaultBrowserName];
     }
   }
+  [chooserWindow makeKeyAndOrderFront:self];
 }
 
 -(IBAction)browserChooserUsed:(id)sender {
@@ -160,9 +171,5 @@ extern int noUI;
   return YES;
 }
 
-- (id)init {
-  self = [super init];
-  return self;
-  noUI = NO;
-}
+
 @end
